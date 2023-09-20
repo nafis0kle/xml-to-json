@@ -19,4 +19,13 @@ public class XmlNode {
     public void plusValue(Double addedValue) {
         value = value + addedValue;
     }
+
+    @Override
+    public String toString() {
+        return "XmlNode{" +
+                "level=" + level +
+                ", value=" + value +
+                '}';
+    }
+
 }

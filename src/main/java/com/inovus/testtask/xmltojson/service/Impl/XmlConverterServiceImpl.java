@@ -1,5 +1,8 @@
 package com.inovus.testtask.xmltojson.service.Impl;
 
+import com.fasterxml.jackson.core.JsonEncoding;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonGenerator;
 import com.inovus.testtask.xmltojson.XmlNode;
 import com.inovus.testtask.xmltojson.service.FileStorageService;
 import com.inovus.testtask.xmltojson.service.XmlConverterService;
@@ -12,6 +15,7 @@ import org.xml.sax.helpers.DefaultHandler;
 
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -58,41 +62,76 @@ public class XmlConverterServiceImpl implements XmlConverterService {
 
     @Override
     public void convertToJson() {
-        try
-        {
+        try(FileOutputStream fos = new FileOutputStream("./xml-files/output.json")) {
+            JsonFactory jFactory = new JsonFactory();
+            JsonGenerator jGenerator = jFactory
+                    .createGenerator(fos, JsonEncoding.UTF8);
+
             SAXParserFactory factory = SAXParserFactory.newInstance();
             SAXParser saxParser = factory.newSAXParser();
-            DefaultHandler handler = new DefaultHandler()
-            {
+            DefaultHandler handler = new DefaultHandler() {
                 Map<String, XmlNode> nodeNameToParam = new HashMap<>();
                 String currentNode = null;
                 Integer currentLevel = 0;
 
-                //parser starts parsing a specific element inside the document
+                public void startDocument() {
+                    try {
+                        jGenerator.writeStartObject();
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+
                 public void startElement(String uri, String localName, String qName, Attributes attributes) {
                     ++currentLevel;
                     currentNode = qName;
                     nodeNameToParam.put(qName, new XmlNode(currentLevel, 0.0));
 
-                    System.out.println("Start element: " + qName + "Current level: " + currentLevel);
+                    try {
+                        jGenerator.writeObjectFieldStart(qName);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+
+                    System.out.println("Start element: " + qName + ". Current level: " + currentLevel + ". "+nodeNameToParam);
                 }
 
-                //parser ends parsing the specific element inside the document
+                public void characters(char ch[], int start, int length) {
+                    String str = new String(ch, start, length);
+                    findNumberAndPlusValue(str);
+                }
+
                 public void endElement(String uri, String localName, String qName) {
                     --currentLevel;
 
-                    System.out.println("End element: " + qName);
+                    try {
+                        jGenerator.writeNumberField("value", nodeNameToParam.get(qName).getValue());
+                        jGenerator.writeEndObject();
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+
+                    nodeNameToParam.remove(qName);
+                    System.out.println("End element: " + qName + ". " + nodeNameToParam);
                 }
 
-                //reads the text value of the currently parsed element
-                public void characters(char ch[], int start, int length) {
-                    String val = new String(ch, start, length);
-                    String[] arr = val.split(" ");
+                public void endDocument() {
+                    try {
+                        jGenerator.writeEndObject();
+                        jGenerator.close();
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+
+                private void findNumberAndPlusValue(String str) {
+                    String[] arr = str.split(" ");
                     for (String el : arr) {
                         if (NumberUtils.isCreatable(el)) {
                             Double number = Double.parseDouble(el);
                             for (Map.Entry<String, XmlNode> entry : nodeNameToParam.entrySet()) {
-                                if (entry.getValue().getLevel() > currentLevel) {
+                                // Увеличивается value для всех элементов уровнем выше
+                                if (entry.getValue().getLevel() <= currentLevel) {
                                     entry.getValue().plusValue(number);
                                 }
                             }
@@ -101,9 +140,8 @@ public class XmlConverterServiceImpl implements XmlConverterService {
                 }
             };
 
-            saxParser.parse("/xml-files/test-xml.xml", handler);
-        }
-        catch (Exception e) {
+            saxParser.parse("./xml-files/test-xml.xml", handler);
+        } catch (Exception e) {
             e.printStackTrace();
         }
     }

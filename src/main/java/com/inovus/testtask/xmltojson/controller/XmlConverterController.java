@@ -43,6 +43,8 @@ public class XmlConverterController {
         redirectAttributes.addFlashAttribute("message",
                 "You successfully uploaded " + file.getOriginalFilename() + "!");
 
+        xmlConverterService.convertToJson();
+
         return "redirect:/xml";
     }
 }
