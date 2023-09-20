@@ -9,4 +9,6 @@ import org.springframework.web.multipart.MultipartFile;
 public interface XmlConverterService {
 
     void upload(MultipartFile file);
+
+    void convertToJson();
 }

@@ -27,6 +27,12 @@ public class XmlConverterController {
         return "uploadForm";
     }
 
+    @GetMapping("/convert/json")
+    public String convertXmlToJson() {
+
+        return "uploadForm";
+    }
+
     @PostMapping()
     public String handleFileUpload(
             @RequestParam("file") MultipartFile file,
