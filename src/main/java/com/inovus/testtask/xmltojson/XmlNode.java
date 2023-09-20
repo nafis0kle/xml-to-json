@@ -13,7 +13,7 @@ import lombok.Setter;
 @AllArgsConstructor
 public class XmlNode {
 
-    private Integer level;
+    private String name;
     private Double value;
 
     public void plusValue(Double addedValue) {
@@ -23,7 +23,7 @@ public class XmlNode {
     @Override
     public String toString() {
         return "XmlNode{" +
-                "level=" + level +
+                "level=" + name +
                 ", value=" + value +
                 '}';
     }

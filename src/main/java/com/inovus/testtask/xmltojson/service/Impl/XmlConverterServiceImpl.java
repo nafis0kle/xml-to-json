@@ -10,11 +10,15 @@ import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.math.NumberUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.w3c.dom.Document;
 import org.xml.sax.Attributes;
 import org.xml.sax.helpers.DefaultHandler;
 
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
+import javax.xml.xpath.*;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -24,6 +28,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * @author nafis
@@ -63,16 +68,27 @@ public class XmlConverterServiceImpl implements XmlConverterService {
     @Override
     public void convertToJson() {
         try(FileOutputStream fos = new FileOutputStream("./xml-files/output.json")) {
+            //Init JsonGenerator
             JsonFactory jFactory = new JsonFactory();
             JsonGenerator jGenerator = jFactory
                     .createGenerator(fos, JsonEncoding.UTF8);
 
+            //Init XPath
+            DocumentBuilderFactory builderFactory = DocumentBuilderFactory.newInstance();
+            DocumentBuilder builder = builderFactory.newDocumentBuilder();
+            Document doc = builder.parse("./xml-files/test-xml.xml");
+            XPathFactory xPathFactory = XPathFactory.newInstance();
+            XPath xPath = xPathFactory.newXPath();
+
+            //Init SAX
             SAXParserFactory factory = SAXParserFactory.newInstance();
             SAXParser saxParser = factory.newSAXParser();
+
             DefaultHandler handler = new DefaultHandler() {
-                Map<String, XmlNode> nodeNameToParam = new HashMap<>();
-                String currentNode = null;
-                Integer currentLevel = 0;
+                Map<Integer, XmlNode> nodeNameToParam = new HashMap<>();
+                String arrayElementName = "";
+                Integer arrayElementCount = 0;
+                Integer tagLevel = 0;
 
                 public void startDocument() {
                     try {
@@ -83,17 +99,36 @@ public class XmlConverterServiceImpl implements XmlConverterService {
                 }
 
                 public void startElement(String uri, String localName, String qName, Attributes attributes) {
-                    ++currentLevel;
-                    currentNode = qName;
-                    nodeNameToParam.put(qName, new XmlNode(currentLevel, 0.0));
+                    ++tagLevel;
+                    nodeNameToParam.put(tagLevel, new XmlNode(qName, 0.0));
+
+                    if (tagLevel != 1) {
+                        try {
+                            XPathExpression xPathExpression = xPath.compile(
+                                    generateIsTagRepeatedExp(qName)
+                            );
+                            Boolean isTagRepeated = (Boolean) xPathExpression.evaluate(doc, XPathConstants.BOOLEAN);
+
+                            if(isTagRepeated) {
+                                XPathExpression xPathExpressionCount = xPath.compile(
+                                        generateTagCountExp()
+                                );
+                                arrayElementCount = ((Double) xPathExpressionCount.evaluate(doc, XPathConstants.NUMBER)).intValue();
+                                arrayElementName = qName;
+                                jGenerator.writeArrayFieldStart(qName);
+                                jGenerator.writeStartObject();
+                                return;
+                            }
+                        } catch (XPathExpressionException | IOException e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
 
                     try {
                         jGenerator.writeObjectFieldStart(qName);
                     } catch (IOException e) {
                         throw new RuntimeException(e);
                     }
-
-                    System.out.println("Start element: " + qName + ". Current level: " + currentLevel + ". "+nodeNameToParam);
                 }
 
                 public void characters(char ch[], int start, int length) {
@@ -102,17 +137,23 @@ public class XmlConverterServiceImpl implements XmlConverterService {
                 }
 
                 public void endElement(String uri, String localName, String qName) {
-                    --currentLevel;
-
                     try {
-                        jGenerator.writeNumberField("value", nodeNameToParam.get(qName).getValue());
-                        jGenerator.writeEndObject();
+                        if (Objects.equals(arrayElementName, qName)) {
+                            if (arrayElementCount > 0) {
+                                jGenerator.writeEndObject();
+                            } else {
+
+                            }
+                        } else {
+                            jGenerator.writeNumberField("value", nodeNameToParam.get(tagLevel).getValue());
+                            jGenerator.writeEndObject();
+                        }
                     } catch (IOException e) {
                         throw new RuntimeException(e);
                     }
 
-                    nodeNameToParam.remove(qName);
-                    System.out.println("End element: " + qName + ". " + nodeNameToParam);
+                    nodeNameToParam.remove(tagLevel);
+                    --tagLevel;
                 }
 
                 public void endDocument() {
@@ -129,14 +170,41 @@ public class XmlConverterServiceImpl implements XmlConverterService {
                     for (String el : arr) {
                         if (NumberUtils.isCreatable(el)) {
                             Double number = Double.parseDouble(el);
-                            for (Map.Entry<String, XmlNode> entry : nodeNameToParam.entrySet()) {
+                            for (Map.Entry<Integer, XmlNode> entry : nodeNameToParam.entrySet()) {
                                 // Увеличивается value для всех элементов уровнем выше
-                                if (entry.getValue().getLevel() <= currentLevel) {
+                                if (entry.getKey() <= tagLevel) {
                                     entry.getValue().plusValue(number);
                                 }
                             }
                         }
                     }
+                }
+
+                private String generateIsTagRepeatedExp(String qName) {
+                    StringBuilder expression = new StringBuilder("/");
+                    for (int i = 1; i < tagLevel; i++) {
+                        expression
+                                .append("/")
+                                .append(nodeNameToParam.get(i).getName());
+                    }
+                    expression
+                            .append("[count(")
+                            .append(qName)
+                            .append(")=1=false()]");
+
+                    return expression.toString();
+                }
+
+                private String generateTagCountExp() {
+                    StringBuilder expression = new StringBuilder("count(/");
+                    for (int i = 1; i <= tagLevel; i++) {
+                        expression
+                                .append("/")
+                                .append(nodeNameToParam.get(i).getName());
+                    }
+                    expression.append(")");
+
+                    return expression.toString();
                 }
             };
 
