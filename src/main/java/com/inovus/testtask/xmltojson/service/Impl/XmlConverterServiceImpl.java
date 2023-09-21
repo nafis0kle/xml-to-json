@@ -69,10 +69,19 @@ public class XmlConverterServiceImpl implements XmlConverterService {
         }
     }
 
+    private String getConvertedJson(String jsonFile){
+        try {
+            return new String(Files.readAllBytes(Paths.get(jsonFile)));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     @Override
-    public void convertToJson(String fileName) {
+    public String convertToJson(String fileName) {
         String xmlFilePath = "./" + fileStorageService.getStoragePath().toString() + "/" + fileName;
         String jsonFilePath = "./" + fileStorageService.getStoragePath().toString() + "/" + outputJsonFileName;
+
         try(FileOutputStream fos = new FileOutputStream(jsonFilePath)) {
             //Init JsonGenerator
             JsonFactory jFactory = new JsonFactory();
@@ -91,9 +100,13 @@ public class XmlConverterServiceImpl implements XmlConverterService {
             SAXParser saxParser = factory.newSAXParser();
 
             DefaultHandler handler = new DefaultHandler() {
-                Map<Integer, XmlNode> nodeNameToParam = new HashMap<>();
-                String arrayElementName = "";
-                Integer arrayElementCount = 0;
+                // Служит для хранения и сложения "value"
+                Map<Integer, XmlNode> tagLevelToXmlNode = new HashMap<>();
+                // Название тега, для которой необходимо создать json массив значений
+                String arrayTagName = "";
+                // Количество элементов внутри json массива
+                Integer arrayTagElementCount = 0;
+                // Уровень вложенности тега
                 Integer tagLevel = 0;
 
                 public void startDocument() {
@@ -107,9 +120,9 @@ public class XmlConverterServiceImpl implements XmlConverterService {
                 public void startElement(String uri, String localName, String qName, Attributes attributes) {
                     try {
                         ++tagLevel;
-                        nodeNameToParam.put(tagLevel, new XmlNode(qName, 0.0));
+                        tagLevelToXmlNode.put(tagLevel, new XmlNode(qName, 0.0));
 
-                        if (Objects.equals(arrayElementName, qName)) {
+                        if (Objects.equals(arrayTagName, qName)) {
                             jGenerator.writeStartObject();
                             return;
                         }
@@ -120,12 +133,12 @@ public class XmlConverterServiceImpl implements XmlConverterService {
                             );
                             Boolean isTagRepeated = (Boolean) xPathExpression.evaluate(doc, XPathConstants.BOOLEAN);
 
-                            if(isTagRepeated) {
+                            if (isTagRepeated) {
                                 XPathExpression xPathExpressionCount = xPath.compile(
                                         generateTagCountExp()
                                 );
-                                arrayElementCount = ((Double) xPathExpressionCount.evaluate(doc, XPathConstants.NUMBER)).intValue();
-                                arrayElementName = qName;
+                                arrayTagElementCount = ((Double) xPathExpressionCount.evaluate(doc, XPathConstants.NUMBER)).intValue();
+                                arrayTagName = qName;
                                 jGenerator.writeArrayFieldStart(qName);
                                 jGenerator.writeStartObject();
                                 return;
@@ -139,25 +152,25 @@ public class XmlConverterServiceImpl implements XmlConverterService {
                     }
                 }
 
-                public void characters(char ch[], int start, int length) {
+                public void characters(char[] ch, int start, int length) {
                     String str = new String(ch, start, length);
                     findNumberAndPlusValue(str);
                 }
 
                 public void endElement(String uri, String localName, String qName) {
                     try {
-                        jGenerator.writeNumberField("value", nodeNameToParam.get(tagLevel).getValue());
+                        jGenerator.writeNumberField("value", tagLevelToXmlNode.get(tagLevel).getValue());
                         jGenerator.writeEndObject();
 
-                        if (Objects.equals(arrayElementName, qName)) {
-                            --arrayElementCount;
-                            if (arrayElementCount == 0) {
+                        if (Objects.equals(arrayTagName, qName)) {
+                            --arrayTagElementCount;
+                            if (arrayTagElementCount == 0) {
                                 jGenerator.writeEndArray();
-                                arrayElementName = "";
+                                arrayTagName = "";
                             }
                         }
 
-                        nodeNameToParam.remove(tagLevel);
+                        tagLevelToXmlNode.remove(tagLevel);
                         --tagLevel;
                     } catch (IOException e) {
                         throw new JsonConvertException(e.getMessage());
@@ -173,12 +186,17 @@ public class XmlConverterServiceImpl implements XmlConverterService {
                     }
                 }
 
+                /**
+                 * Ищет число внутри значения тега и при успешном поиске
+                 * увеличивает "value" для всех родительских тегов
+                 * @param str - значение тега
+                 */
                 private void findNumberAndPlusValue(String str) {
                     String[] arr = str.split(" ");
                     for (String el : arr) {
                         if (NumberUtils.isCreatable(el)) {
                             Double number = Double.parseDouble(el);
-                            for (Map.Entry<Integer, XmlNode> entry : nodeNameToParam.entrySet()) {
+                            for (Map.Entry<Integer, XmlNode> entry : tagLevelToXmlNode.entrySet()) {
                                 // Увеличивается value для всех элементов уровнем выше
                                 if (entry.getKey() <= tagLevel) {
                                     entry.getValue().plusValue(number);
@@ -188,12 +206,18 @@ public class XmlConverterServiceImpl implements XmlConverterService {
                     }
                 }
 
+                /**
+                 * XPath выражение для проверки, повторяется ли одинаковый тег.
+                 * Пример: //parentTag[count(childTag)=1=false()]
+                 * @param qName - название тега
+                 * @return - XPath выражение
+                 */
                 private String generateIsTagRepeatedExp(String qName) {
                     StringBuilder expression = new StringBuilder("/");
                     for (int i = 1; i < tagLevel; i++) {
                         expression
                                 .append("/")
-                                .append(nodeNameToParam.get(i).getName());
+                                .append(tagLevelToXmlNode.get(i).getName());
                     }
                     expression
                             .append("[count(")
@@ -203,12 +227,17 @@ public class XmlConverterServiceImpl implements XmlConverterService {
                     return expression.toString();
                 }
 
+                /**
+                 * XPath выражение для получения кол-ва повторяющихся тегов.
+                 * Пример: count(//parentTag/childTag)
+                 * @return - XPath выражение
+                 */
                 private String generateTagCountExp() {
                     StringBuilder expression = new StringBuilder("count(/");
                     for (int i = 1; i <= tagLevel; i++) {
                         expression
                                 .append("/")
-                                .append(nodeNameToParam.get(i).getName());
+                                .append(tagLevelToXmlNode.get(i).getName());
                     }
                     expression.append(")");
 
@@ -220,6 +249,8 @@ public class XmlConverterServiceImpl implements XmlConverterService {
         } catch (Exception e) {
             throw new JsonConvertException(e.getMessage());
         }
+
+        return getConvertedJson(jsonFilePath);
     }
 
 }

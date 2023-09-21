@@ -5,6 +5,7 @@ import com.inovus.testtask.xmltojson.domain.exception.StorageException;
 import com.inovus.testtask.xmltojson.service.XmlConverterService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.ModelAndView;
@@ -27,13 +28,14 @@ public class XmlConverterController {
     }
 
     @GetMapping("/json")
-    public String showConvertedJson(@RequestParam("fileName") String fileName) {
-        xmlConverterService.convertToJson(fileName);
+    public String showConvertedJson (@RequestParam("fileName") String fileName, Model model) {
+        String json = xmlConverterService.convertToJson(fileName);
+        model.addAttribute("json", json);
         return "showJson";
     }
 
     @PostMapping()
-    public String handleFileUpload(
+    public String handleFileUpload (
             @RequestParam("file") MultipartFile file,
             RedirectAttributes redirectAttributes
     ) {

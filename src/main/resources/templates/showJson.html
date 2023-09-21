@@ -1,9 +1,12 @@
-<html>
+<html xmlns:th="https://www.thymeleaf.org">
 <body>
 
-<div>
+<pre id="convertedJson" ></pre>
 
-</div>
+<script th:inline="javascript">
+    let data = JSON.parse([[${json}]]);
+    document.getElementById("convertedJson").innerHTML = JSON.stringify(data, null, 4);
+</script>
 
 </body>
 </html>
