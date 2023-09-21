@@ -69,7 +69,7 @@ public class XmlConverterServiceImpl implements XmlConverterService {
         }
     }
 
-    private String getConvertedJson(String jsonFile){
+    private String getConvertedJson(String jsonFile) {
         try {
             return new String(Files.readAllBytes(Paths.get(jsonFile)));
         } catch (IOException e) {
