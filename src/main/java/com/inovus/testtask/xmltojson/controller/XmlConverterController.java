@@ -1,36 +1,35 @@
 package com.inovus.testtask.xmltojson.controller;
 
+import com.inovus.testtask.xmltojson.domain.exception.JsonConvertException;
+import com.inovus.testtask.xmltojson.domain.exception.StorageException;
 import com.inovus.testtask.xmltojson.service.XmlConverterService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 /**
  * @author nafis
  * @since 19.09.2023
  */
-
 @Controller
 @RequiredArgsConstructor
-@RequestMapping("/xml")
+@RequestMapping("/xml/converters")
 public class XmlConverterController {
 
     private final XmlConverterService xmlConverterService;
 
     @GetMapping()
-    public String loadXmlFilePage() {
+    public String showUploadXmlFilePage() {
         return "uploadForm";
     }
 
-    @GetMapping("/convert/json")
-    public String convertXmlToJson() {
-
-        return "uploadForm";
+    @GetMapping("/json")
+    public String showConvertedJson(@RequestParam("fileName") String fileName) {
+        xmlConverterService.convertToJson(fileName);
+        return "showJson";
     }
 
     @PostMapping()
@@ -38,13 +37,22 @@ public class XmlConverterController {
             @RequestParam("file") MultipartFile file,
             RedirectAttributes redirectAttributes
     ) {
-
         xmlConverterService.upload(file);
-        redirectAttributes.addFlashAttribute("message",
-                "You successfully uploaded " + file.getOriginalFilename() + "!");
 
-        xmlConverterService.convertToJson();
+        redirectAttributes.addFlashAttribute(
+                "message",
+                "Файл " + file.getOriginalFilename() + " успешно загружен на сервер!"
+        );
+        redirectAttributes.addFlashAttribute("fileName", file.getOriginalFilename());
 
-        return "redirect:/xml";
+        return "redirect:/xml/converters";
+    }
+
+    @ExceptionHandler({StorageException.class, JsonConvertException.class})
+    public ModelAndView handleStorageException(Exception ex) {
+        ModelAndView modelAndView = new ModelAndView();
+        modelAndView.setViewName("uploadForm");
+        modelAndView.addObject("exception", ex.getMessage());
+        return modelAndView;
     }
 }

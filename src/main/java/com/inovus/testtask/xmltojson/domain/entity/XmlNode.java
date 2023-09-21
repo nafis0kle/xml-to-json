@@ -1,4 +1,4 @@
-package com.inovus.testtask.xmltojson;
+package com.inovus.testtask.xmltojson.domain.entity;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -23,7 +23,7 @@ public class XmlNode {
     @Override
     public String toString() {
         return "XmlNode{" +
-                "level=" + name +
+                "name=" + name +
                 ", value=" + value +
                 '}';
     }

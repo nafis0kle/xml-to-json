@@ -18,7 +18,7 @@ import java.nio.file.Paths;
 @Service
 public class FileStorageServiceImpl implements FileStorageService {
 
-    @Value("${app.service.xml-storage-directory}")
+    @Value("${app.service.file-storage-directory-name}")
     private String rootLocation;
     private Path storagePath;
 

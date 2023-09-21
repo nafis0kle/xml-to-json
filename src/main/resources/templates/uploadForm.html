@@ -1,12 +1,8 @@
 <html xmlns:th="https://www.thymeleaf.org">
 <body>
 
-<div th:if="${message}">
-    <h2 th:text="${message}"/>
-</div>
-
 <div>
-    <form method="POST" enctype="multipart/form-data" action="/xml">
+    <form method="POST" enctype="multipart/form-data" action="/xml/converters">
         <table>
             <tr><td>XML файл для загрузки:</td><td><input type="file" name="file" /></td></tr>
             <tr><td></td><td><input type="submit" value="Загрузить" /></td></tr>
@@ -14,16 +10,19 @@
     </form>
 </div>
 
-<div>
-    <ul>
-        <li th:each="file : ${files}">
-            <a th:href="${file}" th:text="${file}" />
-        </li>
-    </ul>
+<div th:if="${message}">
+    <h2 th:text="${message}"/>
 </div>
 
-<div>
-    <a th:text="${json}"></a>
+<div th:if="${exception}">
+    <h2 th:text="${exception}"/>
+</div>
+
+<div th:if="${message}">
+    <form method="GET" enctype="text/plain" th:action="@{/xml/converters/json}">
+            <input type="hidden" name="fileName" th:value="${fileName}" />
+            <input type="submit" value="Показать JSON" />
+    </form>
 </div>
 
 </body>

@@ -10,5 +10,5 @@ public interface XmlConverterService {
 
     void upload(MultipartFile file);
 
-    void convertToJson();
+    void convertToJson(String fileName);
 }

@@ -3,11 +3,14 @@ package com.inovus.testtask.xmltojson.service.Impl;
 import com.fasterxml.jackson.core.JsonEncoding;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
-import com.inovus.testtask.xmltojson.XmlNode;
+import com.inovus.testtask.xmltojson.domain.entity.XmlNode;
+import com.inovus.testtask.xmltojson.domain.exception.JsonConvertException;
+import com.inovus.testtask.xmltojson.domain.exception.StorageException;
 import com.inovus.testtask.xmltojson.service.FileStorageService;
 import com.inovus.testtask.xmltojson.service.XmlConverterService;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.math.NumberUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.w3c.dom.Document;
@@ -34,26 +37,27 @@ import java.util.Objects;
  * @author nafis
  * @since 19.09.2023
  */
-
 @Service
 @RequiredArgsConstructor
 public class XmlConverterServiceImpl implements XmlConverterService {
 
     private final FileStorageService fileStorageService;
 
+    @Value("${app.service.output-json-file-name}")
+    private String outputJsonFileName;
+
     @Override
     public void upload(MultipartFile file) {
         try {
             if (file.isEmpty()) {
-                throw new RuntimeException("Failed to store empty file.");
+                throw new StorageException("Невозможно загрузить пустой файл");
             }
             Path destinationFile = fileStorageService.getStoragePath().resolve(
-                            Paths.get(file.getOriginalFilename()))
+                            Paths.get(Objects.requireNonNull(file.getOriginalFilename())))
                     .normalize().toAbsolutePath();
             if (!destinationFile.getParent().equals(fileStorageService.getStoragePath().toAbsolutePath())) {
                 // This is a security check
-                throw new RuntimeException(
-                        "Cannot store file outside current directory.");
+                throw new StorageException("Ошибка при сохранении файла. Выход за рамки разрешенной директории");
             }
             try (InputStream inputStream = file.getInputStream()) {
                 Files.copy(inputStream, destinationFile,
@@ -61,13 +65,15 @@ public class XmlConverterServiceImpl implements XmlConverterService {
             }
         }
         catch (IOException e) {
-            throw new RuntimeException("Failed to store file.", e);
+            throw new StorageException("Ошибка при сохранении файла");
         }
     }
 
     @Override
-    public void convertToJson() {
-        try(FileOutputStream fos = new FileOutputStream("./xml-files/output.json")) {
+    public void convertToJson(String fileName) {
+        String xmlFilePath = "./" + fileStorageService.getStoragePath().toString() + "/" + fileName;
+        String jsonFilePath = "./" + fileStorageService.getStoragePath().toString() + "/" + outputJsonFileName;
+        try(FileOutputStream fos = new FileOutputStream(jsonFilePath)) {
             //Init JsonGenerator
             JsonFactory jFactory = new JsonFactory();
             JsonGenerator jGenerator = jFactory
@@ -76,7 +82,7 @@ public class XmlConverterServiceImpl implements XmlConverterService {
             //Init XPath
             DocumentBuilderFactory builderFactory = DocumentBuilderFactory.newInstance();
             DocumentBuilder builder = builderFactory.newDocumentBuilder();
-            Document doc = builder.parse("./xml-files/test-xml.xml");
+            Document doc = builder.parse(xmlFilePath);
             XPathFactory xPathFactory = XPathFactory.newInstance();
             XPath xPath = xPathFactory.newXPath();
 
@@ -94,16 +100,21 @@ public class XmlConverterServiceImpl implements XmlConverterService {
                     try {
                         jGenerator.writeStartObject();
                     } catch (IOException e) {
-                        throw new RuntimeException(e);
+                        throw new JsonConvertException(e.getMessage());
                     }
                 }
 
                 public void startElement(String uri, String localName, String qName, Attributes attributes) {
-                    ++tagLevel;
-                    nodeNameToParam.put(tagLevel, new XmlNode(qName, 0.0));
+                    try {
+                        ++tagLevel;
+                        nodeNameToParam.put(tagLevel, new XmlNode(qName, 0.0));
 
-                    if (tagLevel != 1) {
-                        try {
+                        if (Objects.equals(arrayElementName, qName)) {
+                            jGenerator.writeStartObject();
+                            return;
+                        }
+
+                        if (tagLevel != 1) {
                             XPathExpression xPathExpression = xPath.compile(
                                     generateIsTagRepeatedExp(qName)
                             );
@@ -119,15 +130,12 @@ public class XmlConverterServiceImpl implements XmlConverterService {
                                 jGenerator.writeStartObject();
                                 return;
                             }
-                        } catch (XPathExpressionException | IOException e) {
-                            throw new RuntimeException(e);
                         }
-                    }
 
-                    try {
                         jGenerator.writeObjectFieldStart(qName);
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
+
+                    } catch (IOException | XPathExpressionException e) {
+                        throw new JsonConvertException(e.getMessage());
                     }
                 }
 
@@ -138,22 +146,22 @@ public class XmlConverterServiceImpl implements XmlConverterService {
 
                 public void endElement(String uri, String localName, String qName) {
                     try {
+                        jGenerator.writeNumberField("value", nodeNameToParam.get(tagLevel).getValue());
+                        jGenerator.writeEndObject();
+
                         if (Objects.equals(arrayElementName, qName)) {
-                            if (arrayElementCount > 0) {
-                                jGenerator.writeEndObject();
-                            } else {
-
+                            --arrayElementCount;
+                            if (arrayElementCount == 0) {
+                                jGenerator.writeEndArray();
+                                arrayElementName = "";
                             }
-                        } else {
-                            jGenerator.writeNumberField("value", nodeNameToParam.get(tagLevel).getValue());
-                            jGenerator.writeEndObject();
                         }
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
 
-                    nodeNameToParam.remove(tagLevel);
-                    --tagLevel;
+                        nodeNameToParam.remove(tagLevel);
+                        --tagLevel;
+                    } catch (IOException e) {
+                        throw new JsonConvertException(e.getMessage());
+                    }
                 }
 
                 public void endDocument() {
@@ -161,7 +169,7 @@ public class XmlConverterServiceImpl implements XmlConverterService {
                         jGenerator.writeEndObject();
                         jGenerator.close();
                     } catch (IOException e) {
-                        throw new RuntimeException(e);
+                        throw new JsonConvertException(e.getMessage());
                     }
                 }
 
@@ -208,9 +216,9 @@ public class XmlConverterServiceImpl implements XmlConverterService {
                 }
             };
 
-            saxParser.parse("./xml-files/test-xml.xml", handler);
+            saxParser.parse(xmlFilePath, handler);
         } catch (Exception e) {
-            e.printStackTrace();
+            throw new JsonConvertException(e.getMessage());
         }
     }
 
